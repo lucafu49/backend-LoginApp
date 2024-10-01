@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace backend_LoginApp.Models;
 
@@ -13,5 +14,6 @@ public partial class Client
 
     public string Mail { get; set; } = null!;
 
+    [MaxLength(100)]
     public string Password { get; set; } = null!;
 }
