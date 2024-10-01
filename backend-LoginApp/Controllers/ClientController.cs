@@ -2,6 +2,10 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 namespace backend_LoginApp.Controllers
 {
@@ -10,10 +14,12 @@ namespace backend_LoginApp.Controllers
     public class ClientController : ControllerBase
     {
         private readonly LoginAppContext _context;
+        private readonly IConfiguration _configuration;
 
-        public ClientController(LoginAppContext context)
+        public ClientController(LoginAppContext context, IConfiguration configuration)
         {
             _context = context;
+            _configuration = configuration;
         }
 
         [HttpGet]
@@ -62,10 +68,39 @@ namespace backend_LoginApp.Controllers
 
             if (existingClient != null)
             {
-                return Ok(new {message = "Login exitoso", client = existingClient});
+                var token = GenerateJwtToken(existingClient);
+
+                return Ok(new
+                {
+                    message = "Login exitoso",
+                    token = token, // Incluir el token en la respuesta
+                    client = existingClient
+                });
             }
 
             return Unauthorized(new { message = "Correo o contraseña incorrectos" });
+        }
+
+        private string GenerateJwtToken(Client client) 
+        {
+            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
+            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+            var claims = new[]
+            {
+        new Claim(JwtRegisteredClaimNames.Sub, client.Mail),
+        new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+        new Claim("clientId", client.IdClient.ToString())
+    };
+
+            var token = new JwtSecurityToken(
+                issuer: _configuration["Jwt:Issuer"],
+                audience: _configuration["Jwt:Audience"],
+                claims: claims,
+                expires: DateTime.Now.AddHours(1), // El token expira en 1 hora
+                signingCredentials: credentials);
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
         }
     }
 }
