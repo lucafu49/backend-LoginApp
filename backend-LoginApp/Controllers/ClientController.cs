@@ -1,10 +1,13 @@
 ﻿using backend_LoginApp.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace backend_LoginApp.Controllers
@@ -30,6 +33,7 @@ namespace backend_LoginApp.Controllers
             return Ok(listClient);
         }
 
+        [Authorize]
         [HttpGet]
         [Route("{id:int}")] 
         public async Task<IActionResult> getClientById(int id)
@@ -54,6 +58,8 @@ namespace backend_LoginApp.Controllers
                 return Conflict(new { message = "Correo ya existente" });
             }
 
+            request.Password = BCrypt.Net.BCrypt.HashPassword(request.Password);
+
             await _context.Clients.AddAsync(request);
             await _context.SaveChangesAsync();
             return Ok(request);
@@ -64,16 +70,15 @@ namespace backend_LoginApp.Controllers
         public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
         {
             var existingClient = await _context.Clients
-                .FirstOrDefaultAsync(c => c.Mail == loginDto.Mail && c.Password == loginDto.Password);
+                .FirstOrDefaultAsync(c => c.Mail == loginDto.Mail);
 
-            if (existingClient != null)
+            if (existingClient != null && BCrypt.Net.BCrypt.Verify(loginDto.Password, existingClient.Password))
             {
                 var token = GenerateJwtToken(existingClient);
-
                 return Ok(new
                 {
                     message = "Login exitoso",
-                    token = token, // Incluir el token en la respuesta
+                    token = token,
                     client = existingClient
                 });
             }
@@ -102,5 +107,37 @@ namespace backend_LoginApp.Controllers
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
+
+
+        [HttpPost]
+        [Route("RequestPasswordReset")]
+        public async Task<IActionResult> RequestPasswordReset([FromBody] PasswordResetRequest request)
+        {
+            var client = await _context.Clients.FirstOrDefaultAsync(c => c.Mail == request.Mail);
+            if(client == null)
+            {
+                return NotFound(new { message = "Usuario no encontrado" });
+            }
+
+            var token = GenerateResetToken();
+            var expiration = DateTime.Now.AddHours(1);
+
+            await SendResetEmail(request.Mail, token);
+
+            return Ok(new { message = "Se ha enviado un correo con instrucciones para restablecer su contraseña" });
+
+        }
+
+        private string GenerateResetToken()
+        {
+            // Genera un token único para restablecimiento de contraseña
+            return Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+        }
+
+        private async Task SendResetEmail(string email, string token)
+        {
+            var resetLink = $"https://localhost:4200/reset-password?token={token}";
+        }
+
     }
 }
